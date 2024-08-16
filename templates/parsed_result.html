@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parsed Result</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        p {
+            font-size: 18px;
+            line-height: 1.6;
+        }
+        a {
+            display: inline-block;
+            font-size: 16px;
+            color: #4CAF50;
+            text-decoration: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            background-color: #fff;
+            border: 1px solid #4CAF50;
+            margin: 5px 0;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        a:hover {
+            background-color: #4CAF50;
+            color: #fff;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .buttons {
+            display: flex;
+            flex-direction: column;
+        }
+        .buttons a {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Parsed Result</h1>
+    <p>Дані були успішно оброблені. Ви можете переглянути їх у таблиці або завантажити в потрібному форматі.</p>
+    <div class="buttons">
+        <a href="/table">Переглянути таблицю</a>
+        <a href="/download?filetype=xlsx">Завантажити Excel файл</a>
+        <a href="/download?filetype=csv">Завантажити CSV файл</a>
+        <a href="/download?filetype=xml">Завантажити XML файл</a>
+        <a href="/">Вернутися назад</a>
+    </div>
+</div>
+</body>
+</html>
