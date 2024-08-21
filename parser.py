@@ -103,9 +103,10 @@ async def extract_content(url: str, ignore_list: List[str], code_v: str='0', par
     if parser_type == 'https':
         page_source = await Https_Parser(url)
     elif parser_type == 'Selenium':
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             loop = asyncio.get_event_loop()
-            page_source = await loop.run_in_executor(executor, process_url_with_selenium, url)
+            page_source = loop.run_in_executor(executor, process_url_with_selenium, url)
+
     else:
         logging.error(f'Unknown parser type: {parser_type}')
 
@@ -227,7 +228,7 @@ def parse_after_h1_remove_after_stopword(html: BeautifulSoup, ignore_list: List[
                 after_h1_content = after_h1_content[:closing_tag_index]
 
         # Повертаємо об'єднану частину з <h1> і відредагований контент після нього
-        html = match.group(1) + after_h1_content
+        html = after_h1_content
 
     return html
 
@@ -265,8 +266,7 @@ def parse_readability(html: BeautifulSoup, ignore_list: List[str]):
 
     # Додаємо зображення в кінець очищеного контенту
     for img in images:
-        print(img)
-        if img.parent in original_soup.find_all(['p', 'div', 'article']):
+        if img.parent in original_soup.find_all(['p', 'div', 'article', 'section', 'figure', 'header', 'aside']):
             img_tag = BeautifulSoup(str(img), 'html.parser')
             content.append(img_tag.prettify())
 

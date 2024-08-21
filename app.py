@@ -120,6 +120,7 @@ async def parse_url(request: Request):
     elif urls:
         # Список URL
         urls = urls.splitlines()
+        print(urls)
         tasks = [extract_content(url.strip(), ignore_list, code_v=code_v, parser_type=parser_type) for url in urls if url.strip()]
         results = await asyncio.gather(*tasks)
 
