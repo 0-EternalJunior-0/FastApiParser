@@ -1,49 +1,18 @@
-"""
-# Документація для FastAPI проекту
-
-Цей файл реалізує веб-застосунок на FastAPI з можливостями парсингу URL, відображення таблиць і завантаження файлів.
-
-## Імпортовані бібліотеки
-
-- `asyncio`, `os`, `random`, `logging`: стандартні бібліотеки Python.
-- `FastAPI`, `Request`, `HTMLResponse`, `FileResponse`: FastAPI компоненти для обробки запитів і відповідей.
-- `Jinja2Templates`: для рендерингу HTML шаблонів.
-- `StaticFiles`: для роботи зі статичними файлами.
-- `pandas`: для обробки даних.
-
-## Налаштування
-
-- **Статичні файли**: Директорії `templates` для шаблонів HTML та `static` для статичних файлів.
-- **Логування**: Логи зберігаються у файлі `parser.log`.
-- **Конфігурація**: Завантажується з `config.yaml`.
-
-## Роутери
-
-- **Головна сторінка (`/`)**: Відображає `index.html`.
-- **Парсинг URL (`/parse`)**: Приймає одиночний URL або список URL для парсингу.
-- **Відображення таблиці (`/table`)**: Показує таблицю з парсингованими даними.
-- **Завантаження файлів (`/download`)**: Завантажує файли у форматах `xlsx`, `csv`, або `xml`.
-
-## Запуск
-
-Запустіть застосунок з `uvicorn`:
-
-```bash
-uvicorn your_script_name:app --host 127.0.0.1 --port 8000
-"""
 import asyncio
 import os
-import random
 import logging
+
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 import pandas as pd
+from fastapi.responses import JSONResponse
 
 from parser import extract_content
 from data_processing import convert_data_to_files
-from utils import load_config
+from utils import load_config, blacklist, add_unreachable_site, get_google_search_results
 
 # Налаштування статичних файлів
 static_dir = 'templates'
@@ -83,14 +52,15 @@ async def parse_url(request: Request):
         HTMLResponse: HTML-сторінка з результатами парсингу або повідомленням про відсутність даних.
     """
     global parsed_data
-    parsed_data = None  # Сброс данных
+    parsed_data = pd.DataFrame()  # Сброс данных
 
     form = await request.form()
     url = form.get('url')
     urls = form.get('urls')
     code_v = form.get('code_v', '0')  # Значення за замовчуванням
     parser_type = form.get('parser_type', 'https')  # Значення за замовчуванням
-
+    min_chars = int(form.get('min_chars', 0) ) # Значення за замовчуванням
+    max_chars = int(form.get('max_chars', -1))  # Значення за замовчуванням
     ignore_list = config.get('ignore_words', [])
 
     def yield_ID(start_num=2):
@@ -108,30 +78,71 @@ async def parse_url(request: Request):
             ID = f'1.{num}'
             yield ID
             num += 1
+    def block(url):
+        black_list = blacklist('blacklist.txt')
+        for url_stop in black_list:
+            if url_stop == url:
+                logging.info(f'Сайт занесений в blacklist\t\t {url}')
+                return False
+        return True
+    def limit_text(text: BeautifulSoup, min_chars: int, max_chars: int, url: str):
+        text_all = ' '.join(text.stripped_strings)
+        if len(text_all) < min_chars:
+            logging.info(f'Кількість символів занадто мала\t\t{url}')
+            return False
+        if max_chars != -1 and len(text_all) > max_chars:
+            logging.info(f'Кількість символів занадто велика\t\t{url}')
+            return False
+        return True
 
     id_generator = yield_ID()
+    all_data = []
+
+    def log_unreachable_sites(data):
+        if data['Status Parsing'] == 'НІ':
+            try:
+                domain = data["URL"].split("/")[2]
+            except:
+                domain = data["URL"]
+            add_unreachable_site('Blacklist_Domen.txt', domain)
+    def log_ok_parser(data):
+        print(data['Status Parsing'])
+        if data['Status Parsing'] == 'ТАК':
+            domain = data["URL"]
+            add_unreachable_site('Blacklist_Page.txt', domain)
+
     if url:
-        # Окремий URL
-        data = await extract_content(url, ignore_list, code_v=code_v, parser_type=parser_type)
-        if data:
-            data['ID'] = next(id_generator)
-            parsed_data = pd.DataFrame([data])
-
+        if block(url):
+            data = await extract_content(url, ignore_list, code_v=code_v, parser_type=parser_type)
+            if data and limit_text(data['Content'], min_chars, max_chars, url):
+                data['ID'] = next(id_generator)
+                log_ok_parser(data)
+                all_data.append(data)
+            else:
+                logging.error('Не вдалося отримати дані з URL або зміст сайту недійсний')
+                log_unreachable_sites(data)
+                return HTMLResponse(content="<h1>Не вдалося отримати дані з URL або зміст сайту недійсний</h1>", status_code=404)
+        else:
+            return HTMLResponse(content="<h1>Сайт занесений в blacklist</h1>", status_code=404)
     elif urls:
-        # Список URL
         urls = urls.splitlines()
-        print(urls)
-        tasks = [extract_content(url.strip(), ignore_list, code_v=code_v, parser_type=parser_type) for url in urls if url.strip()]
+        tasks = []
+        urls = [url for url in urls if block(url)]
+        for url in urls:
+            url = url.strip()
+            tasks.append(extract_content(url, ignore_list, code_v=code_v, parser_type=parser_type))
         results = await asyncio.gather(*tasks)
-
-        all_data = []
         for data in results:
-            if data:
+            if data and limit_text(data['Content'], min_chars, max_chars, url):
+                log_ok_parser(data)
                 data['ID'] = next(id_generator)
                 all_data.append(data)
+            else:
+                log_unreachable_sites(data)
+                logging.error('Не вдалося отримати дані з URL або зміст сайту недійсний')
 
-        if all_data:
-            parsed_data = pd.DataFrame(all_data)
+    if all_data:
+        parsed_data = pd.DataFrame(all_data)
 
     if parsed_data is not None and not parsed_data.empty:
         return templates.TemplateResponse("parsed_result.html", {"request": request})
@@ -181,6 +192,31 @@ async def download_file(filetype: str = "xlsx"):
         )
     else:
         return HTMLResponse(content="<h1>Unsupported file type</h1>", status_code=400)
+
+@app.post("/search", response_class=JSONResponse)
+async def search_google(request: Request):
+    """
+    Пошук в Google за запитом.
+
+    Args:
+        request (Request): HTTP запит з параметром query.
+
+    Returns:
+        JSONResponse: JSON відповідь з результатами пошуку.
+    """
+    data = await request.form()
+    query = data.get('query', '')
+    num_results = data.get('num_results', 10)  # Значення за замовчуванням
+
+    if not query:
+        return JSONResponse(content={"error": "Query parameter 'query' is required"}, status_code=400)
+
+    try:
+        results = get_google_search_results(query, num_results=int(num_results))
+        return JSONResponse(content={"results": results})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 if __name__ == "__main__":
     import uvicorn

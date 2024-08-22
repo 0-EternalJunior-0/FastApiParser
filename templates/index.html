@@ -91,9 +91,88 @@
             margin: 0;
             font-style: italic;
         }
+
+
+
+
+
+
+        input[type="number"] {
+            padding: 8px 12px;
+            width: 100px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="number"]:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        br {
+            line-height: 2;
+        }
+
+        .results_url {
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #d7d7d7;
+            font-size: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .results_url h2 {
+            margin-top: 0;
+            color: #333;
+            font-size: 16px; /* Менший розмір шрифту для заголовка */
+        }
+
+        .results_url ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .results_url li {
+            margin-bottom: 2px;
+            font-size: 14px; /* Менший розмір шрифту для пунктів списку */
+        }
+
+        .results_url a {
+            text-decoration: none;
+            color: #0066cc;
+            font-weight: bold;
+            font-size: 14px; /* Менший розмір шрифту для посилань */
+        }
+
+        .results_url a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
+<h1>Google Search Results</h1>
+<form id="searchForm" action="/search" method="post">
+    <label for="query">Пошуковий запит:</label>
+    <input type="text" id="query" name="query" placeholder="Пошуковий запит" required>
+    <label for="num_results">Кількість результатів:</label>
+    <input type="number" id="num_results" name="num_results" min="1" max="100" value="10" required>
+    <button type="submit">Скрапер Старт</button>
+</form>
+<div class="results_url" id="results_url">
+    <!-- Результати пошуку будуть відображені тут -->
+</div>
+
 <h1>URL Parser</h1>
 <form id="urlForm" action="/parse" method="post" onsubmit="return validateForm()">
     <label for="url">Введіть один URL:</label>
@@ -119,6 +198,15 @@
             Використання браузера Chrome для парсингу (з підгрузкою JavaScript і реклами)
         </label>
     </div>
+    <label for="min_chars">Мінімальна кількість символів:
+        <input type="number" id="min_chars" name="min_chars" min="1" value=1>
+    </label>
+    <br>
+
+    <label for="max_chars">Максимальна кількість символів:
+        <input type="number" id="max_chars" name="max_chars" min="1" value=9999>
+    </label>
+    <br>
 
     <button type="submit">Submit</button>
 </form>
@@ -133,9 +221,17 @@
 
 <script>
     async function loadInfo() {
-        const response = await fetch('/static/info.json');
-        const data = await response.json();
-        return data;
+        try {
+            const response = await fetch('/static/info.json');
+            if (!response.ok) {
+                throw new Error('Не вдалося завантажити інформацію.');
+            }
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Помилка завантаження інформації:', error);
+            return {};
+        }
     }
 
     function showInfo(key) {
@@ -149,20 +245,34 @@
     function validateForm() {
         const urlField = document.getElementById('url');
         const urlsField = document.getElementById('urls');
+        const minChars = document.getElementById('min_chars').value;
+        const maxChars = document.getElementById('max_chars').value;
+
         if (!urlField.value.trim() && !urlsField.value.trim()) {
             alert('Будь ласка, заповніть хоча б одне з полів.');
             return false;
         }
+
+        if (parseInt(minChars) > parseInt(maxChars)) {
+            alert("Мінімальна кількість символів не може бути більше за максимальну кількість символів.");
+            return false;
+        }
+
         return true;
     }
 
     async function handleResponse(response) {
         const resultDiv = document.getElementById('results');
-        if (response.ok) {
-            const html = await response.text();
-            resultDiv.innerHTML = html;
-        } else {
-            resultDiv.innerHTML = `<p class="error">Error: ${response.statusText}</p>`;
+        try {
+            if (response.ok) {
+                const html = await response.text();
+                resultDiv.innerHTML = html;
+            } else {
+                const errorText = await response.text();
+                resultDiv.innerHTML = `<p class="error">Error: ${response.statusText}</p><pre>${errorText}</pre>`;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `<p class="error">Помилка обробки відповіді: ${error.message}</p>`;
         }
     }
 
@@ -181,6 +291,53 @@
     window.addEventListener('load', () => {
         document.getElementById('info-box').style.display = 'none';
     });
+
+    async function handleSearchResponse(response) {
+        const resultDiv = document.getElementById('results_url');
+        try {
+            if (response.ok) {
+                const data = await response.json();
+                resultDiv.innerHTML = ''; // Очистити попередні результати
+
+                // Перевірити, чи є у відповіді список результатів
+                if (Array.isArray(data.results)) {
+                    const ul = document.createElement('ul');
+                    data.results.forEach(result => {
+                        const li = document.createElement('li');
+                        const link = document.createElement('a');
+                        link.href = result;
+                        link.textContent = result;
+                        link.target = "_blank"; // Відкрити посилання в новій вкладці
+                        li.appendChild(link);
+                        ul.appendChild(li);
+                    });
+                    resultDiv.appendChild(ul);
+                } else {
+                    resultDiv.innerHTML = '<p class="error">Результати не знайдено або неправильний формат відповіді.</p>';
+                }
+            } else {
+                const errorText = await response.text();
+                resultDiv.innerHTML = `<p class="error">Error: ${response.statusText}</p><pre>${errorText}</pre>`;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `<p class="error">Помилка обробки відповіді: ${error.message}</p>`;
+        }
+    }
+
+    document.getElementById('searchForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        const response = await fetch(form.action, {
+            method: 'POST',
+            body: formData
+        });
+        await handleSearchResponse(response);
+    });
+
+
+
+
 </script>
 </body>
 </html>

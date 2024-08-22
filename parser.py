@@ -1,6 +1,8 @@
 import concurrent.futures
 import re
 import time
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 from typing import List
 import logging
 from urllib.parse import urljoin
@@ -9,6 +11,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 import asyncio
 from readability import Document
@@ -16,6 +19,9 @@ from data_processing import remove_unwanted_tags, should_ignore, replace_img_tag
 from utils import get_status_description, load_config
 from config_chrome_options import chrome_options
 
+# Ліміт для кількості одночасних екземплярів браузера
+MAX_BROWSER_INSTANCES = 2
+browser_semaphore = asyncio.Semaphore(MAX_BROWSER_INSTANCES)
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, filename='parser.log', filemode='a',
@@ -34,17 +40,14 @@ async def Https_Parser(url: str) -> str:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers) as response:
                 status_code = response.status
-                global status_description
                 status_description = get_status_description(response.status)
                 logging.info(status_description)
-
                 if status_code == 200:
                     response_text = await response.text()
                     return response_text
                 else:
                     logging.error(f"Помилка: не вдалося отримати доступ до сторінки {url} (Статус-код: {status_code})")
                     return ''
-
     except Exception as e:
         logging.error(f"Помилка при обробці URL {url}: {str(e)}")
         return ''
@@ -53,9 +56,8 @@ def Selenium_Parser(url: str) -> str:
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options())
     try:
         driver.get(url)
-        time.sleep(3)
+        WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
 
-        # Прокрутка сторінки
         scroll_duration = 6  # Тривалість прокрутки в секундах
         scroll_speed = 180  # Швидкість прокрутки (в пікселях за один крок)
         start_time = time.time()
@@ -64,15 +66,17 @@ def Selenium_Parser(url: str) -> str:
             driver.execute_script(f"window.scrollBy(0, {scroll_speed});")
             time.sleep(0.05)  # Інтервал між прокрутками
 
-        # Отримання HTML сторінки
         time.sleep(1)
         page_source = driver.page_source
     except Exception as e:
-        page_source=''
-        logging.info('ERROR', e)
+        logging.error(f'Помилка у Selenium: {str(e)}')
+        page_source = ''
     finally:
-        driver.close()
-        driver.quit()
+        try:
+            driver.quit()
+            driver.close()
+        except Exception as e:
+            logging.error(f'Помилка при закритті драйвера Selenium: {str(e)}')
     return page_source
 
 def process_url_with_selenium(url: str) -> str:
@@ -82,42 +86,29 @@ def process_url_with_selenium(url: str) -> str:
         logging.error(f'Exception occurred in Selenium processing: {e}')
         return ''
 
-
-
-async def extract_content(url: str, ignore_list: List[str], code_v: str='0', parser_type='parser_type'):
-    """
-    Витягує контент з вказаного URL і обробляє його.
-
-    Args:
-        url (str): URL для парсингу.
-        ignore_list (List[str]): Список слів, які потрібно ігнорувати.
-        code_v1 (bool): Флаг для визначення версії коду (специфічне оброблення контенту).
-
-    Returns:
-        dict: Словник з результатами парсингу, включаючи статус, ID, заголовок, контент, URL та код відповіді.
-        :param parser_type:
-        :param url:
-        :param ignore_list:
-        :param code_v:
-    """
+async def extract_content(url: str, ignore_list: List[str], code_v: str='0', parser_type='https'):
     if parser_type == 'https':
         page_source = await Https_Parser(url)
     elif parser_type == 'Selenium':
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             loop = asyncio.get_event_loop()
-            page_source = loop.run_in_executor(executor, process_url_with_selenium, url)
-
+            page_source = loop.run_in_executor(executor, Selenium_Parser, url)
     else:
-        logging.error(f'Unknown parser type: {parser_type}')
+        logging.error(f'Невірний тип парсера: {parser_type}')
+        page_source = ''
+
+    return await analysis_html(url, page_source, code_v, ignore_list)
 
 
+
+async def analysis_html(url: str, page_source: str, code_v: str, ignore_list: List[str]) -> dict:
     if page_source == '':
         logging.error(f'Неможливо обробити порожній контент для URL: {url}')
         return {
             'Status Parsing': 'НІ',
             'ID': '1.2.',
             'Title': 'No Title',
-            'Content': '',
+            'Content': BeautifulSoup('<p>None</p>', 'html.parser'),
             'URL': url,
             'Код відповіді': status_description,
             'Image Url_original': '',
@@ -174,7 +165,7 @@ async def extract_content(url: str, ignore_list: List[str], code_v: str='0', par
             'Status Parsing': 'НІ',
             'ID': '1.2.',
             'Title': 'No Title',
-            'Content': '',
+            'Content': BeautifulSoup('<p>None</p>', 'html.parser'),
             'URL': url,
             'Код відповіді': status_description,
             'Image Url_original': '',

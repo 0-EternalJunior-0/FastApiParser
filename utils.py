@@ -31,14 +31,19 @@
      - FileNotFoundError: Якщо якийсь з файлів не знайдено.
 
 """
+import logging
 
 import yaml
 import zipfile
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin
 import os
+from googlesearch import search
 
 from bs4 import BeautifulSoup
+
+logging.basicConfig(level=logging.INFO, filename='parser.log', filemode='a',
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def load_config(config_file: str):
@@ -47,6 +52,54 @@ def load_config(config_file: str):
         raise FileNotFoundError(f"Файл конфігурації {config_file} не знайдено.")
     with open(config_file, 'r', encoding='utf-8') as file:
         return yaml.safe_load(file)
+
+
+
+def blacklist(blacklist_file: str):
+    """blacklist - список сторінок які потрібно блокувати txt"""
+    if not os.path.isfile(blacklist_file):
+        raise FileNotFoundError(f"Файл blacklist :  {blacklist_file} не знайдено.")
+    with open(blacklist_file, 'r', encoding='utf-8') as file:
+        return file.read().split('\n')
+
+def add_unreachable_site(blacklist_file: str, site_url: str):
+    print(1)
+    print(blacklist_file)
+    """
+    Додає недоступний сайт у файл.
+
+    blacklist_file - назва текстового файлу, в який записуються недоступні сайти.
+    site_url - URL сайту, який потрібно додати до списку недоступних.
+    """
+    # Отримуємо шлях до поточної директорії
+    current_directory = os.getcwd()
+
+    # Створюємо повний шлях до файлу
+    blacklist_file_path = os.path.join(current_directory, blacklist_file)
+    print(blacklist_file_path)
+    # Перевіряємо, чи файл існує і створюємо його, якщо необхідно
+    file_exists = os.path.isfile(blacklist_file_path)
+
+    if not file_exists:
+        with open(blacklist_file_path, 'w', encoding='utf-8') as file:
+            pass  # Просто створюємо порожній файл
+
+    # Читаємо існуючі сайти, якщо файл існує
+    existing_sites = set()
+    if file_exists:
+        with open(blacklist_file_path, 'r', encoding='utf-8') as file:
+            existing_sites = set(file.read().splitlines())
+
+    # Додаємо сайт у файл, якщо його ще немає
+    if site_url not in existing_sites:
+        with open(blacklist_file_path, 'a', encoding='utf-8') as file:
+            file.write(site_url + '\n')
+            logging.info(f"Сайт {site_url} додано до тимчасового списку недоступних.")
+    else:
+        logging.info(f"Сайт {site_url} вже є у тимчасовому списку недоступних.")
+
+
+
 
 def get_status_description(status_code: int)->str:
     """Повертає опис статус-коду HTTP."""
@@ -102,3 +155,22 @@ def create_zip_archive(files: list, zip_file_path: str):
                 zipf.write(file, os.path.basename(file))
             else:
                 raise FileNotFoundError(f"Файл {file} не знайдено.")
+
+def get_google_search_results(query: str, num_results: int = 100):
+    """
+    Отримує перші `num_results` посилань з Google за запитом `query`.
+
+    :param query: Пошуковий запит
+    :param num_results: Кількість результатів для отримання
+    :return: Список URL-адрес
+    """
+    urls = []
+    try:
+        # Змінюємо параметри пошуку для отримання результатів
+        for url in search(query, num_results=num_results, lang="en"):
+            urls.append(url)
+            if len(urls) >= num_results:
+                break
+    except Exception as e:
+        print(f"Виникла помилка: {e}")
+    return urls
