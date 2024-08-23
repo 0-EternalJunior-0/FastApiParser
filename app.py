@@ -106,7 +106,6 @@ async def parse_url(request: Request):
                 domain = data["URL"]
             add_unreachable_site('Blacklist_Domen.txt', domain)
     def log_ok_parser(data):
-        print(data['Status Parsing'])
         if data['Status Parsing'] == 'ТАК':
             domain = data["URL"]
             add_unreachable_site('Blacklist_Page.txt', domain)

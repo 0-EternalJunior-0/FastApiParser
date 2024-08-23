@@ -164,13 +164,16 @@ def get_google_search_results(query: str, num_results: int = 100):
     :param num_results: Кількість результатів для отримання
     :return: Список URL-адрес
     """
+    config = load_config('config.yaml')
+    lang = config.get('lang', 'en')
+    region = config.get('region', None)
+    safe = config.get('safe', "active")
     urls = []
     try:
-        # Змінюємо параметри пошуку для отримання результатів
-        for url in search(query, num_results=num_results, lang="en"):
+        for url in search(query, num_results=num_results, lang=lang, region=region, safe=safe):
             urls.append(url)
             if len(urls) >= num_results:
                 break
     except Exception as e:
         print(f"Виникла помилка: {e}")
-    return urls
+    return list(set(urls))

@@ -32,7 +32,8 @@ config = load_config('config.yaml')
 
 async def Https_Parser(url: str) -> str:
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+
     }
     try:
         timeout_time = config.get('timeout_time', 15)
@@ -73,10 +74,11 @@ def Selenium_Parser(url: str) -> str:
         page_source = ''
     finally:
         try:
-            driver.quit()
             driver.close()
+            driver.quit()
         except Exception as e:
             logging.error(f'Помилка при закритті драйвера Selenium: {str(e)}')
+            page_source = ''
     return page_source
 
 def process_url_with_selenium(url: str) -> str:
@@ -90,13 +92,10 @@ async def extract_content(url: str, ignore_list: List[str], code_v: str='0', par
     if parser_type == 'https':
         page_source = await Https_Parser(url)
     elif parser_type == 'Selenium':
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            loop = asyncio.get_event_loop()
-            page_source = loop.run_in_executor(executor, Selenium_Parser, url)
+        page_source = process_url_with_selenium(url)
     else:
         logging.error(f'Невірний тип парсера: {parser_type}')
         page_source = ''
-
     return await analysis_html(url, page_source, code_v, ignore_list)
 
 
@@ -116,7 +115,6 @@ async def analysis_html(url: str, page_source: str, code_v: str, ignore_list: Li
         }
     try:
         soup = BeautifulSoup(page_source, 'html.parser')
-
         title_tag = soup.find('h1')
         title_html = title_tag.prettify() if title_tag else '<h1></h1>'
         title_text = title_tag.get_text(strip=True) if title_tag else 'No Title'
